@@ -24,18 +24,22 @@ from utils import VideoWriter
 
 #%%
 EPOCHS = 2000
-LR = 1e-3
+LR_INIT = 1e-3
+BATCH_SIZE=8 #for fast synthesis (but no persistance): BATCH_SIZE=1;x0=seed
 
 #%%
 TARGET_SIZE = 40
 TARGET_EMOJI = "🦎"
 target_img = load_emoji(TARGET_EMOJI)
+target_img = target_img[None,:]
 print(target_img.shape)
-plt.imshow(target_img)
+plt.imshow(target_img[0])
 
 # %%
-pool = jnp.zeros((1,40,40,16))
+pool = jnp.zeros((1000,40,40,16))
 pool = pool.at[:,20,20,3:].set(1.0)
+seed = jnp.zeros((1,40,40,16))
+seed = seed.at[:,20,20,3:].set(1.0)
 
 #%%
 class CA3(nn.Module):
@@ -47,19 +51,6 @@ class CA3(nn.Module):
       x = nn.Conv(features=16, kernel_size=(1,1), kernel_init=nn.initializers.zeros, use_bias=False)(x) 
       x = img + x
       return x
-
-key = jax.random.PRNGKey(0)
-ca3 = CA3()
-params_init = ca3.init(key, pool[:4,...])['params']
-output = ca3.apply({'params': params_init}, pool[:4,...])
-output.shape
-
-#  %%
-ca=CA3()
-state = train_state.TrainState.create(
-    apply_fn = ca.apply,
-    params = params_init,
-    tx = optax.adam(LR))
 
 # %%
 @jax.jit
@@ -77,14 +68,31 @@ def apply_model(state, img):
     state = state.apply_gradients(grads=grads)
     return state, grads, loss, x
 
+#  %%
+key = jax.random.PRNGKey(0)
+ca=CA3()
+params_init = ca.init(key, pool[:1,...])['params']
+state = train_state.TrainState.create(
+    apply_fn = ca.apply,
+    params = params_init,
+    tx = optax.adam(LR_INIT))
+
 # %%
+EPOCHS = 2000
+LR = LR_INIT
 key = random.PRNGKey(0)
 losses = []
-for idx_epochs in tqdm(range(EPOCHS)):
+sks0 = random.split(key, EPOCHS)
+for idx_epochs, sk0 in tqdm(enumerate(sks0), total=len(sks0)):
     
-    x = pool
-    state, grads, loss, x = apply_model(state, x)
+    idx_batch = random.choice(sk0, jnp.arange(0, len(pool), 1, dtype=int), (1,BATCH_SIZE), replace=False)[0]
+    x0 = pool[idx_batch]
+    x0 = x0.at[:1].set(seed)
+    # x0=seed
+    state, grads, loss, x = apply_model(state, x0)
     losses.append(loss)
+
+    pool = pool.at[idx_batch].set(x)
 
     if idx_epochs == EPOCHS//2:
         LR = LR * 0.1
@@ -96,15 +104,23 @@ for idx_epochs in tqdm(range(EPOCHS)):
 # %%
 print(losses[-1])
 plt.semilogy(losses, label=f'epochs = {EPOCHS}')
+plt.ylim([1e-4,0])
 plt.legend()
 
 # %%
-x = pool
+x = seed
+imgs_syn = []
 with VideoWriter(filename = 'synthesis.mp4') as vid:
-    for i in range(100):
-        vid.add(x[0,...,:3])
+    for i in tqdm(range(100)):
+        im = jnp.clip(x[0,...,:3],0,1)
+        vid.add(im)
+        imgs_syn.append(im)
         x = ca.apply({'params': state.params}, x)
 
 # %%
-x.shape, to_rgba(x[0])
-# %%
+fig, ax = plt.subplots(4,12, figsize=(24,8))
+for i in range(48):
+    ax.flat[i].imshow(imgs_syn[i])
+    # ax.flat[i].hist(imgs_syn[i].flatten())
+    ax.flat[i].axis('off')
+fig.tight_layout()

@@ -5,7 +5,6 @@ import requests
 import io
 import matplotlib.pyplot as plt
 import jax.scipy as jsp
-from flax.core.frozen_dict import FrozenDict
 from jax import lax
 from flax import linen as nn
 from jax import vmap
