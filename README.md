@@ -3,4 +3,4 @@
 
 
 ## Results
-![image_synthesis](figures/image_syn.png?raw=true) 
+![image_synthesis](figures/image_synthesis.png?raw=true) 
