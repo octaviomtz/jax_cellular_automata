@@ -19,13 +19,13 @@ from flax.training import train_state
 import optax
 import ml_collections
 
-from utils import load_emoji
+from utils import load_emoji, get_living_mask
 from utils import VideoWriter
 
 #%%
 EPOCHS = 2000
 LR_INIT = 1e-3
-BATCH_SIZE=8 #for fast synthesis (but no persistance): BATCH_SIZE=1;x0=seed
+BATCH_SIZE=4 #for fast synthesis (but no persistance): BATCH_SIZE=1;x0=seed
 
 #%%
 TARGET_SIZE = 40
@@ -36,7 +36,7 @@ print(target_img.shape)
 plt.imshow(target_img[0])
 
 # %%
-pool = jnp.zeros((1000,40,40,16))
+pool = jnp.zeros((256,40,40,16))
 pool = pool.at[:,20,20,3:].set(1.0)
 seed = jnp.zeros((1,40,40,16))
 seed = seed.at[:,20,20,3:].set(1.0)
@@ -46,10 +46,12 @@ class CA3(nn.Module):
   
   @nn.compact
   def __call__(self, img):
+      alive_mask = get_living_mask(img)
       x = nn.Conv(features=128, kernel_size=(3,3), kernel_init=nn.initializers.glorot_uniform(), bias_init=nn.initializers.zeros, padding='SAME')(img)
       x = nn.relu(x)
       x = nn.Conv(features=16, kernel_size=(1,1), kernel_init=nn.initializers.zeros, use_bias=False)(x) 
       x = img + x
+      x *= alive_mask
       return x
 
 # %%
@@ -78,7 +80,7 @@ state = train_state.TrainState.create(
     tx = optax.adam(LR_INIT))
 
 # %%
-EPOCHS = 2000
+EPOCHS = 8000
 LR = LR_INIT
 key = random.PRNGKey(0)
 losses = []
@@ -88,7 +90,7 @@ for idx_epochs, sk0 in tqdm(enumerate(sks0), total=len(sks0)):
     idx_batch = random.choice(sk0, jnp.arange(0, len(pool), 1, dtype=int), (1,BATCH_SIZE), replace=False)[0]
     x0 = pool[idx_batch]
     x0 = x0.at[:1].set(seed)
-    # x0=seed
+    x0=seed
     state, grads, loss, x = apply_model(state, x0)
     losses.append(loss)
 
@@ -104,15 +106,21 @@ for idx_epochs, sk0 in tqdm(enumerate(sks0), total=len(sks0)):
 # %%
 print(losses[-1])
 plt.semilogy(losses, label=f'epochs = {EPOCHS}')
-plt.ylim([1e-4,0])
+plt.ylim([1e-5,0])
 plt.legend()
+
+#%%
+def to_rgb(x):
+    rgb, alpha = x[...,:3], jnp.clip(x[...,3:4],0,1)
+    return 1-alpha+rgb
 
 # %%
 x = seed
 imgs_syn = []
 with VideoWriter(filename = 'synthesis.mp4') as vid:
     for i in tqdm(range(100)):
-        im = jnp.clip(x[0,...,:3],0,1)
+        # im = jnp.clip(x[0,...,:4],0,1)
+        im = jnp.clip(to_rgb(x)[0],0,1)
         vid.add(im)
         imgs_syn.append(im)
         x = ca.apply({'params': state.params}, x)
@@ -124,3 +132,5 @@ for i in range(48):
     # ax.flat[i].hist(imgs_syn[i].flatten())
     ax.flat[i].axis('off')
 fig.tight_layout()
+plt.savefig('figures/image_synthesis.png')
+# %%

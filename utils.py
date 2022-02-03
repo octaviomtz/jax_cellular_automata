@@ -83,3 +83,6 @@ class GetLivingMask(nn.Module):
       x = nn.max_pool(x[...,3:4], (3,3), padding='SAME')
       return x > 0.1
 
+def get_living_mask(x):
+      x = nn.max_pool(x[...,3:4], (3,3), padding='SAME')
+      return x > 0.1
