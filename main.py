@@ -20,8 +20,10 @@ import ml_collections
 
 from utils import load_emoji, get_living_mask
 from utils import VideoWriter
+from utils_figures import fig_loss_and_synthesis
+from utils_percep import perception
 
-EPOCHS = 2000
+EPOCHS = 8000
 LR_INIT = 1e-3
 BATCH_SIZE=4 #for fast synthesis (but no persistance): BATCH_SIZE=1;x0=seed
 
@@ -40,15 +42,15 @@ def main():
 
     # CNN no perception
     class CA3(nn.Module):
-    @nn.compact
-    def __call__(self, img):
-        alive_mask = get_living_mask(img)
-        x = nn.Conv(features=128, kernel_size=(3,3), kernel_init=nn.initializers.glorot_uniform(), bias_init=nn.initializers.zeros, padding='SAME')(img)
-        x = nn.relu(x)
-        x = nn.Conv(features=16, kernel_size=(1,1), kernel_init=nn.initializers.zeros, use_bias=False)(x) 
-        x = img + x
-        x *= alive_mask
-        return x
+        @nn.compact
+        def __call__(self, img):
+            alive_mask = get_living_mask(img)
+            x = nn.Conv(features=128, kernel_size=(3,3), kernel_init=nn.initializers.glorot_uniform(), bias_init=nn.initializers.zeros, padding='SAME')(img)
+            x = nn.relu(x)
+            x = nn.Conv(features=16, kernel_size=(1,1), kernel_init=nn.initializers.zeros, use_bias=False)(x) 
+            x = img + x
+            x *= alive_mask
+            return x
 
     # apply model, get the loss and backpropagate
     @jax.jit
@@ -76,7 +78,7 @@ def main():
         tx = optax.adam(LR_INIT))
 
     # main training loop
-    EPOCHS = 8000
+    EPOCHS = 2000
     LR = LR_INIT
     key = random.PRNGKey(0)
     losses = []
@@ -119,13 +121,9 @@ def main():
             imgs_syn.append(im)
             x = ca.apply({'params': state.params}, x)
 
-    # make synthesis figure
-    fig, ax = plt.subplots(4,12, figsize=(24,8))
-    for i in range(48):
-        ax.flat[i].imshow(imgs_syn[i])
-        ax.flat[i].axis('off')
-    fig.tight_layout()
-    plt.savefig('figures/image_synthesis.png')
+
+    fig_loss_and_synthesis(imgs_syn, losses, save='figures/image_synthesis.png',
+                            label='no perception')
 
 if __name__ == "__main__":
     main()

@@ -1,5 +1,16 @@
 import jax
 import jax.numpy as jnp
+from jax import vmap
+
+ident = jnp.array([[0.0,0.0,0.0],[0.0,1.0,0.0],[0.0,0.0,0.0]], dtype=jnp.float32)
+sobel_x = jnp.array([[-1.0,0.0,1.0],[-2.0,0.0,2.0],[-1.0,0.0,1.0]], dtype=jnp.float32)/8
+lap = jnp.array([[1.0,2.0,1.0],[2.0,-12,2.0],[1.0,2.0,1.0]], dtype=jnp.float32)
+kernels = jnp.stack([ident, sobel_x, sobel_x.T, lap], axis=0)
+
+@jax.jit
+def perception(img, kernels): 
+    _perception = vmap(vmap(vmap(conv2d, in_axes=(-1, None)), in_axes=(None,0)), in_axes=(0, None)) 
+    return _perception(img, kernels)
 
 # https://stackoverflow.com/questions/2448015/2d-convolution-using-python-and-numpy
 def gen_idx_conv1d(in_size, ker_size):
