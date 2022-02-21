@@ -23,34 +23,59 @@ from utils import VideoWriter
 from utils_figures import fig_loss_and_synthesis
 from utils_percep import perception
 
-EPOCHS = 8000
+EPOCHS = 2000
 LR_INIT = 1e-3
-BATCH_SIZE=4 #for fast synthesis (but no persistance): BATCH_SIZE=1;x0=seed
+BATCH_SIZE = 4 #for fast synthesis (but no persistance): BATCH_SIZE=1;x0=seed
 
 def main():
     TARGET_SIZE = 40
     TARGET_EMOJI = "🦎"
     target_img = load_emoji(TARGET_EMOJI)
     target_img = target_img[None,:]
-    print(target_img.shape)
-    plt.imshow(target_img[0])
 
     pool = jnp.zeros((256,40,40,16))
     pool = pool.at[:,20,20,3:].set(1.0)
     seed = jnp.zeros((1,40,40,16))
     seed = seed.at[:,20,20,3:].set(1.0)
 
-    # CNN no perception
+    # CNN perception
+    ident = jnp.array([[0.0,0.0,0.0],[0.0,1.0,0.0],[0.0,0.0,0.0]], dtype=jnp.float32)
+    sobel_x = jnp.array([[-1.0,0.0,1.0],[-2.0,0.0,2.0],[-1.0,0.0,1.0]], dtype=jnp.float32)/8
+    lap = jnp.array([[1.0,2.0,1.0],[2.0,-12,2.0],[1.0,2.0,1.0]], dtype=jnp.float32)
+    kernels = jnp.stack([ident, sobel_x, sobel_x.T, lap], axis=0)
+
+    # make dummy tensor for evaluation
+    dummy = jnp.zeros((1,40,40,16))
+    dummy.at[:1,...,:4].set(target_img) 
+    dummy = jnp.array(dummy, 'float32')
+
+    # CNN wih perception
     class CA3(nn.Module):
         @nn.compact
         def __call__(self, img):
-            alive_mask = get_living_mask(img)
-            x = nn.Conv(features=128, kernel_size=(3,3), kernel_init=nn.initializers.glorot_uniform(), bias_init=nn.initializers.zeros, padding='SAME')(img)
+            x, alive_mask = self.perception_and_reshape(img, kernels)
+            x = nn.Conv(features=128, kernel_size=(3,3), kernel_init=nn.initializers.glorot_uniform(), bias_init=nn.initializers.zeros, padding='SAME')(x)
             x = nn.relu(x)
             x = nn.Conv(features=16, kernel_size=(1,1), kernel_init=nn.initializers.zeros, use_bias=False)(x) 
             x = img + x
             x *= alive_mask
             return x
+
+        def perception_and_reshape(self, x, kernels):
+            n_chan = x.shape[-1] 
+            n_kern = len(kernels)
+            pre_life_mask = get_living_mask(x)
+            x = perception(x, kernels)
+            x = jnp.swapaxes(x, 1,2) 
+            x = x.reshape((len(x),n_chan*n_kern,x.shape[-2],x.shape[-1]))
+            x = jnp.pad(x, ((0,0),(0,0),(1,1),(1,1)))
+            x = jnp.moveaxis(x, 1, -1)
+            return x, pre_life_mask
+
+    key = jax.random.PRNGKey(0)
+    ca=CA3()
+    params = ca.init(key, pool[:1,...])['params']
+    out = ca.apply({'params': params}, dummy)
 
     # apply model, get the loss and backpropagate
     @jax.jit
@@ -59,7 +84,7 @@ def main():
         def loss_fn(params, x):
             def call_ca(_, x): return ca.apply({'params': params}, x)
             x = lax.fori_loop(0, 50, call_ca, x)
-            loss = jnp.mean(jnp.square(x[...,:4]-target_img))
+            loss = jnp.mean(jnp.square(x[...,:4]-target_img[...,:4]))
             return loss, x
 
         grad_fn = jax.value_and_grad(loss_fn, has_aux=True)
@@ -78,7 +103,6 @@ def main():
         tx = optax.adam(LR_INIT))
 
     # main training loop
-    EPOCHS = 2000
     LR = LR_INIT
     key = random.PRNGKey(0)
     losses = []
@@ -88,7 +112,7 @@ def main():
         idx_batch = random.choice(sk0, jnp.arange(0, len(pool), 1, dtype=int), (1,BATCH_SIZE), replace=False)[0]
         x0 = pool[idx_batch]
         x0 = x0.at[:1].set(seed)
-        x0=seed
+        # x0=seed
         state, grads, loss, x = apply_model(state, x0)
         losses.append(loss)
 
@@ -101,13 +125,7 @@ def main():
             params = state.params,
             tx = optax.adam(LR)) 
 
-    # plot loss
-    print(losses[-1])
-    plt.semilogy(losses, label=f'epochs = {EPOCHS}')
-    # plt.ylim([1e-5,0])
-    plt.legend()
-
-    # make synthesis video
+    # make synthesis figure
     def to_rgb(x):
         rgb, alpha = x[...,:3], jnp.clip(x[...,3:4],0,1)
         return 1-alpha+rgb
@@ -120,10 +138,8 @@ def main():
             vid.add(im)
             imgs_syn.append(im)
             x = ca.apply({'params': state.params}, x)
-
-
     fig_loss_and_synthesis(imgs_syn, losses, save='figures/image_synthesis.png',
-                            label='no perception')
+                            label='perception')
 
 if __name__ == "__main__":
     main()
