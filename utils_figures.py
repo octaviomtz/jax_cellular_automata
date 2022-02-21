@@ -12,10 +12,11 @@ def fig_loss_and_synthesis(imgs_syn, losses, save=False, label='loss'):
             count += 2
     ax2 = fig.add_subplot(gs[:4, :4])
     ax2.semilogy(losses, label=label)
-    ax2.legend(fontsize=16)
-    ax2.set_xlabel('epochs', fontsize=16)
-    ax2.set_xlabel('MSE', fontsize=16)
-    ax2.tick_params(axis='x', labelsize=14)
-    ax2.tick_params(axis='y', labelsize=14)
+    ax2.legend(fontsize=18)
+    ax2.set_xlabel('epochs', fontsize=20)
+    ax2.set_ylabel('MSE', fontsize=20)
+    ax2.tick_params(axis='x', labelsize=18)
+    ax2.tick_params(axis='y', labelsize=18)
+    fig.tight_layout()
     if save:
         plt.savefig(save)

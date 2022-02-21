@@ -44,7 +44,7 @@ def main():
     lap = jnp.array([[1.0,2.0,1.0],[2.0,-12,2.0],[1.0,2.0,1.0]], dtype=jnp.float32)
     kernels = jnp.stack([ident, sobel_x, sobel_x.T, lap], axis=0)
 
-    # make dummy tensor for evaluation
+    # make dummy tensor to init params
     dummy = jnp.zeros((1,40,40,16))
     dummy.at[:1,...,:4].set(target_img) 
     dummy = jnp.array(dummy, 'float32')
