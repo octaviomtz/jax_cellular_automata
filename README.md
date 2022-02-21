@@ -2,7 +2,7 @@
 ## Overview
 
 ## Results
-![image_synthesis](figures/image_synthesis.png?raw=true) 
+![image_synthesis](figures/image_synthesis_withPerc.png?raw=true) 
 
 ## Perception
 We can have a vectorized version of perception (channel wise convolution with specific filters) using vmap. In this case we apply vmap on each axis and convolve each channel of the input image by our identity, sobel and laplacian filters.
