@@ -1,4 +1,3 @@
-from cv2 import VideoWriter
 import jax
 import jax.numpy as jnp
 import PIL
@@ -18,25 +17,29 @@ from flax.training import train_state
 import optax
 import ml_collections
 
+import hydra
+from omegaconf import DictConfig, OmegaConf
+import logging
+
 from utils import load_emoji, get_living_mask
 from utils import VideoWriter
 from utils_figures import fig_loss_and_synthesis
 from utils_percep import perception
 
-EPOCHS = 2000
-LR_INIT = 1e-3
-BATCH_SIZE = 4 #for fast synthesis (but no persistance): BATCH_SIZE=1;x0=seed
+@hydra.main(config_path="config", config_name="config.yaml")
+def main(cfg: DictConfig):
+    #HYDRA
+    log = logging.getLogger(__name__)
+    log.info(OmegaConf.to_yaml(cfg))
+    path_orig = hydra.utils.get_original_cwd()
 
-def main():
-    TARGET_SIZE = 40
-    TARGET_EMOJI = "🦎"
-    target_img = load_emoji(TARGET_EMOJI)
+    target_img = load_emoji(cfg.TARGET_EMOJI)
     target_img = target_img[None,:]
 
-    pool = jnp.zeros((256,40,40,16))
-    pool = pool.at[:,20,20,3:].set(1.0)
-    seed = jnp.zeros((1,40,40,16))
-    seed = seed.at[:,20,20,3:].set(1.0)
+    pool = jnp.zeros((256,cfg.TARGET_SIZE,cfg.TARGET_SIZE,cfg.TARGET_CH))
+    pool = pool.at[:,cfg.TARGET_SIZE//2,cfg.TARGET_SIZE//2,3:].set(1.0)
+    seed = jnp.zeros((1,cfg.TARGET_SIZE,cfg.TARGET_SIZE,cfg.TARGET_CH))
+    seed = seed.at[:,cfg.TARGET_SIZE//2,cfg.TARGET_SIZE//2,3:].set(1.0)
 
     # CNN perception
     ident = jnp.array([[0.0,0.0,0.0],[0.0,1.0,0.0],[0.0,0.0,0.0]], dtype=jnp.float32)
@@ -45,7 +48,7 @@ def main():
     kernels = jnp.stack([ident, sobel_x, sobel_x.T, lap], axis=0)
 
     # make dummy tensor to init params
-    dummy = jnp.zeros((1,40,40,16))
+    dummy = jnp.zeros((1,cfg.TARGET_SIZE,cfg.TARGET_SIZE,cfg.TARGET_CH))
     dummy.at[:1,...,:4].set(target_img) 
     dummy = jnp.array(dummy, 'float32')
 
@@ -56,7 +59,7 @@ def main():
             x, alive_mask = self.perception_and_reshape(img, kernels)
             x = nn.Conv(features=128, kernel_size=(3,3), kernel_init=nn.initializers.glorot_uniform(), bias_init=nn.initializers.zeros, padding='SAME')(x)
             x = nn.relu(x)
-            x = nn.Conv(features=16, kernel_size=(1,1), kernel_init=nn.initializers.zeros, use_bias=False)(x) 
+            x = nn.Conv(features=cfg.TARGET_CH, kernel_size=(1,1), kernel_init=nn.initializers.zeros, use_bias=False)(x) 
             x = img + x
             x *= alive_mask
             return x
@@ -100,16 +103,16 @@ def main():
     state = train_state.TrainState.create(
         apply_fn = ca.apply,
         params = params_init,
-        tx = optax.adam(LR_INIT))
+        tx = optax.adam(cfg.LR_INIT))
 
     # main training loop
-    LR = LR_INIT
+    LR = cfg.LR_INIT
     key = random.PRNGKey(0)
     losses = []
-    sks0 = random.split(key, EPOCHS)
+    sks0 = random.split(key, cfg.EPOCHS)
     for idx_epochs, sk0 in tqdm(enumerate(sks0), total=len(sks0)):
         
-        idx_batch = random.choice(sk0, jnp.arange(0, len(pool), 1, dtype=int), (1,BATCH_SIZE), replace=False)[0]
+        idx_batch = random.choice(sk0, jnp.arange(0, len(pool), 1, dtype=int), (1, cfg.BATCH_SIZE), replace=False)[0]
         x0 = pool[idx_batch]
         x0 = x0.at[:1].set(seed)
         # x0=seed
@@ -118,7 +121,7 @@ def main():
 
         pool = pool.at[idx_batch].set(x)
 
-        if idx_epochs == EPOCHS//2:
+        if idx_epochs == cfg.EPOCHS//2:
             LR = LR * 0.1
             state = train_state.TrainState.create(
             apply_fn = ca.apply,
@@ -132,14 +135,14 @@ def main():
 
     x = seed
     imgs_syn = []
-    with VideoWriter(filename = 'synthesis.mp4') as vid:
+    with VideoWriter(filename = 'synthesis.mp4', fps=10.0) as vid:
         for i in tqdm(range(100)):
             im = jnp.clip(to_rgb(x)[0],0,1)
             vid.add(im)
             imgs_syn.append(im)
             x = ca.apply({'params': state.params}, x)
-    fig_loss_and_synthesis(imgs_syn, losses, save='figures/image_synthesis.png',
-                            label='perception')
+    fig_loss_and_synthesis(imgs_syn, losses, save='image_synthesis.png',
+                            label=cfg.fig_label)
 
 if __name__ == "__main__":
     main()

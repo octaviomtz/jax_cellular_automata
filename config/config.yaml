@@ -1,0 +1,8 @@
+
+EPOCHS: 2000
+LR_INIT: 1e-3
+BATCH_SIZE: 4 #for fast synthesis (but no persistance): BATCH_SIZE=1;x0=seed
+TARGET_EMOJI: "🦚" #"🦎"
+TARGET_SIZE: 40
+TARGET_CH: 16
+fig_label: 'perception'
