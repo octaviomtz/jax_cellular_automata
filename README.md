@@ -1,5 +1,7 @@
-# jax_cellular_automata
+# Neural Cellular Automata with JAX
+
 ## Overview
+JAX implementation of the Neural Cellular Automata from (https://distill.pub/2020/growing-ca/).
 
 ## Results
 ![image_synthesis](figures/image_synthesis_withPerc.png?raw=true) 

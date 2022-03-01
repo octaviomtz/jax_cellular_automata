@@ -11,6 +11,17 @@ kernels = jnp.stack([ident, sobel_x, sobel_x.T, lap], axis=0)
 
 @jax.jit
 def perception(img, kernels): 
+    """
+    Apply channel-wise 2D convolution using non-learnable kernels 
+    to all channels of an image. For each iteration of vmap we 
+    apply the conv2D accross H, W & C.
+    args:
+        img: (type: numpy/jax array) array of size N H W C
+        kernels: (type: numpy/jax array) stack of 2D kernels.  
+    return: 
+        perception vector: (type: numpy/jax array) result of
+         applying all kernels to img
+    """
     _perception = vmap(vmap(vmap(conv2d, in_axes=(-1, None)), in_axes=(None,0)), in_axes=(0, None)) 
     return _perception(img, kernels)
 
